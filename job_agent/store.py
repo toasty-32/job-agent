@@ -46,6 +46,30 @@ class JobStore:
     def unscored(self) -> list[str]:
         return [jid for jid, r in self.records.items() if r["score"] is None and not r.get("filtered_out")]
 
+    def set_decision(self, job_id: str, status: str, note: str = "") -> None:
+        """status is "approved", "skipped" or "later"."""
+        self.records[job_id]["status"] = status
+        self.records[job_id]["feedback"] = note
+
+    def awaiting_review(self, min_score: int) -> list[tuple[str, dict]]:
+        """Suitable jobs the candidate has not yet approved or skipped, best first."""
+        return [
+            (jid, r) for jid, r in self.ranked()
+            if r["score"]["score"] >= min_score
+            and r.get("status") not in ("approved", "skipped")
+            and not r["documents"]
+        ]
+
+    def feedback_history(self, limit: int = 60) -> str:
+        lines = []
+        for record in self.records.values():
+            if record.get("status") in ("approved", "skipped"):
+                job = record["job"]
+                verb = "Wanted to apply" if record["status"] == "approved" else "Not interested"
+                note = f": {record['feedback']}" if record.get("feedback") else ""
+                lines.append(f"- {verb} — {job['title']} at {job['company']} ({job['location']}){note}")
+        return "\n".join(lines[-limit:])
+
     def ranked(self) -> list[tuple[str, dict]]:
         scored = [(jid, r) for jid, r in self.records.items() if r["score"]]
         return sorted(scored, key=lambda item: item[1]["score"]["score"], reverse=True)

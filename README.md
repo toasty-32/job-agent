@@ -13,54 +13,74 @@ knowledge_base/  ─────────────────────
                                         cv.md · cv.docx · cover_letter.md · cover_letter.docx · notes.md
 ```
 
-## Setup
+## Setup on Windows (recommended)
+
+1. Install **Python 3.10+** from https://www.python.org/downloads/. Tick **"Add python.exe to PATH"**.
+2. Download this project: `git clone https://github.com/toasty-32/job-agent` (or use GitHub's
+   **Code → Download ZIP** and unzip it somewhere permanent, such as `Documents\job-agent`).
+3. Double-click **`Install (Windows).cmd`** in the project folder. It will:
+   - install the packages into a private `.venv` folder
+   - ask for your Claude API key **once** and save it in `.env`, readable only by your account
+   - ask what time to run the daily search, then add it to Windows Task Scheduler
+   - put **Review jobs**, **Search jobs now** and **Job agent folder** shortcuts on your desktop
+   - open `preferences.yaml` and the `knowledge_base` folder so you can fill them in
+4. Edit `preferences.yaml`. Put your CVs, career history and project notes in `knowledge_base\`,
+   then delete `example_profile.md`.
+5. Double-click **Search jobs now** to try it.
+
+To remove the schedule and shortcuts, run
+`powershell -ExecutionPolicy Bypass -File scripts\uninstall-windows.ps1`.
+
+## The daily routine
+
+1. **Every day at your chosen time** the agent searches LinkedIn, scores each new job against
+   your knowledge base and preferences, and **opens a summary page in your browser**. It lists the
+   new jobs that scored at least `ranking.min_score`, each with a link, why it fits, and its gaps. If the
+   PC was off or asleep at that time, the search runs once it's back on. Past summaries are kept in
+   `output\summaries\`, and logs in `output\logs\`.
+2. **When you're ready, double-click Review jobs.** For each suggested job, press **a** (apply),
+   **s** (skip) or **l** (later):
+   - *apply*: optionally say what to emphasise ("lead with my team leadership").
+   - *skip*: optionally say why ("too junior", "don't want big pharma"). The agent reads these
+     reasons on every later run and scores similar jobs the way you would.
+3. Once you've worked through the list, it **writes a tailored CV and cover letter for every job you
+   approved** and opens the `applications` folder.
+
+## Setup on macOS / Linux
 
 ```bash
 cd job-agent
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp preferences.example.yaml preferences.yaml      # then edit it
-export ANTHROPIC_API_KEY=sk-ant-...               # or `ant auth login`
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env        # saved once, loaded automatically
 ```
 
-Then fill `knowledge_base/` with your material: profile, full career history, projects, old CVs
-(`.docx` or `.pdf`), publications and so on. `knowledge_base/README.md` has tips. Delete
-`example_profile.md` when you're done. Your personal files, `preferences.yaml` and `output/` are
-git-ignored.
+To schedule it, add a cron entry such as
+`0 8 * * * cd /path/to/job-agent && .venv/bin/python -m job_agent daily`.
 
-## Usage
+## Commands
 
-**One-shot pipeline.** This searches, scores every new job, and writes documents for the
-top `documents.top_n` jobs that score at least `ranking.min_score`:
-
-```bash
-python -m job_agent run
-```
-
-**Chat mode.** The agent decides which tools to use:
-
-```bash
-python -m job_agent chat
-```
-```
-you › find remote ML engineer roles in Europe posted this week and score them
-you › write applications for the top two, emphasise my leadership experience
-you › add this one: https://www.linkedin.com/jobs/view/4012345678/
-```
-
-**Individual steps:**
+Run these as `python -m job_agent <command>`. On Windows, use `.venv\Scripts\python -m job_agent <command>`
+from the project folder.
 
 | Command | What it does |
 |---|---|
-| `search` | Searches LinkedIn for every keyword × location, fetches descriptions, applies filters. No Claude calls. |
-| `score` | Scores every saved job that has no score yet. |
-| `list [--min-score N]` | Lists saved jobs, best first. |
-| `add-job <linkedin-url>` | Saves a specific LinkedIn job. |
-| `add-job <url> --description-file jd.txt --title ... --company ...` | Saves a job from any other site. |
-| `write <job_id> [--instructions "..."]` | Writes the CV and cover letter for one job. |
+| `daily [--open]` | Search, score, and write today's summary page. This is what the schedule runs. |
+| `review` | Approve or skip suggested jobs, then write documents for the approved ones. |
+| `chat` | Talk to the agent and let it use all the tools, e.g. *"find remote roles in Europe and score them"*. |
+| `run` | Search, score, then write documents for the top `documents.top_n` jobs automatically, with no review. |
+| `search` | Search LinkedIn and save new jobs, with no Claude calls. |
+| `score` | Score every saved job that has no score yet. |
+| `list [--min-score N]` | List saved jobs, best first. |
+| `add-job <linkedin-url>` | Save a specific LinkedIn job. |
+| `add-job <url> --description-file jd.txt --title ... --company ...` | Save a job from any other site. |
+| `write <job_id> [--instructions "..."]` | Write the CV and cover letter for one job. |
 
-Every job and its score is kept in `output/jobs.json`. Jobs you've already seen are skipped on
-later runs, so a daily `run` only handles new postings.
+Every job, score and decision is kept in `output/jobs.json`, so each job is only suggested once.
+Each application lands in `output/applications/<company>--<role>--<id>/` as `cv.docx`,
+`cover_letter.docx`, Markdown copies, and `notes.md`. The notes give the fit score, your gaps, and
+any requirements your knowledge base has no evidence for.
 
 ## How it works
 
@@ -73,6 +93,7 @@ later runs, so a daily `run` only handles new postings.
   therefore re-reads your background at cached-token prices. Scores and documents come back as
   structured output (Pydantic models), so they always parse. The prompt forbids inventing facts,
   and each `notes.md` lists the job requirements your knowledge base has no evidence for.
+- Your apply/skip decisions and reasons are added to that system prompt, so scoring learns your taste.
 - **`job_agent/agent.py`** is the chat agent. It runs a tool-use loop over `search_linkedin`,
   `list_jobs`, `get_job`, `add_job`, `score_job`, `write_application` and `reload_knowledge_base`.
 - If Claude's safety classifiers decline a request, requests use `fallbacks: "default"`, which

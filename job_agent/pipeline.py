@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from pathlib import Path
 from typing import Callable
 
@@ -27,7 +28,9 @@ class JobAgent:
     @property
     def model(self) -> CareerModel:
         if self._model is None:  # loaded lazily so `search` works without an API key
-            self._model = CareerModel(self.prefs, load_knowledge_base(self.kb_dir))
+            self._model = CareerModel(
+                self.prefs, load_knowledge_base(self.kb_dir), feedback=self.store.feedback_history()
+            )
         return self._model
 
     def reload_knowledge_base(self) -> None:
@@ -125,6 +128,26 @@ class JobAgent:
         self.store.set_documents(job_id, paths)
         self.store.save()
         return application, paths
+
+    def daily(self) -> Path:
+        """Searches and scores new jobs, then writes the day's summary page. Writes no documents:
+        the candidate picks which jobs to apply for with `review`."""
+        from .summary import write_summary
+
+        self.search()
+        self.score_pending()
+        today = date.today().isoformat()
+        threshold = self.prefs.ranking.min_score
+        new = []
+        for job_id, record in self.store.awaiting_review(threshold):
+            if not record.get("reported_on"):
+                record["reported_on"] = today
+                new.append((job_id, record))
+        self.store.save()
+        waiting = len(self.store.awaiting_review(threshold)) - len(new)
+        path = write_summary(self.store.output_dir, new, waiting, threshold)
+        self.log(f"{len(new)} new suitable job(s); summary at {path}")
+        return path
 
     def run(self) -> None:
         """Full pipeline: search, score everything new, then write documents for the best matches."""

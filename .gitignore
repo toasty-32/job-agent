@@ -4,3 +4,7 @@ knowledge_base/*
 !knowledge_base/README.md
 !knowledge_base/example_profile.md
 output/
+.env
+.venv/
+__pycache__/
+.pytest_cache/

@@ -2,11 +2,56 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import traceback
+from datetime import date, datetime
 from pathlib import Path
 
-from .config import DEFAULT_KB_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_PREFERENCES, Preferences
+from .config import DEFAULT_KB_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_PREFERENCES, ROOT, Preferences
+from .env import load_env_file
 from .pipeline import JobAgent
+
+
+def _open(path: Path) -> None:
+    """Opens a file or folder with its default app (Windows / macOS / Linux)."""
+    if sys.platform == "win32":
+        os.startfile(path)  # noqa: S606 - local file the agent just wrote
+    else:
+        import subprocess
+        import webbrowser
+
+        if path.is_dir():
+            subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(path)], check=False)
+        else:
+            webbrowser.open(path.resolve().as_uri())
+
+
+def _daily(agent: JobAgent, output: Path, open_summary: bool) -> int:
+    """Run by the scheduled task, often with no console, so everything also goes to a log file."""
+    from .summary import write_error_page
+
+    log_dir = output / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{date.today().isoformat()}.log"
+
+    def log(message: str) -> None:
+        line = f"{datetime.now():%H:%M:%S} {message}"
+        print(line)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+    agent.log = log
+    try:
+        summary = agent.daily()
+        status = 0
+    except Exception:
+        log(traceback.format_exc())
+        summary = write_error_page(output, traceback.format_exc())
+        status = 1
+    if open_summary:
+        _open(summary)
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -16,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_DIR)
     commands = parser.add_subparsers(dest="command", required=True)
 
+    daily = commands.add_parser("daily", help="search and score new jobs, then write today's summary page")
+    daily.add_argument("--open", action="store_true", help="open the summary in the browser when done")
+    review = commands.add_parser("review", help="approve or skip suggested jobs; writes documents for approved ones")
+    review.add_argument("--pause", action="store_true", help="wait for Enter before exiting (for the desktop shortcut)")
     commands.add_parser("run", help="search, score, and write documents for the best new matches")
     commands.add_parser("chat", help="talk to the agent and let it use the tools")
     commands.add_parser("search", help="search LinkedIn and save new jobs (no Claude calls)")
@@ -35,14 +84,37 @@ def main(argv: list[str] | None = None) -> int:
     write.add_argument("--instructions", default="", help='e.g. "emphasise people management"')
 
     args = parser.parse_args(argv)
+    load_env_file(ROOT / ".env")
     try:
         prefs = Preferences.load(args.preferences)
     except (FileNotFoundError, ValueError) as err:
         print(err, file=sys.stderr)
+        if args.command == "daily":  # the scheduled run has no console, so show it in the browser
+            from .summary import write_error_page
+
+            page = write_error_page(args.output, str(err))
+            if args.open:
+                _open(page)
         return 1
     agent = JobAgent(prefs, args.knowledge_base, args.output)
 
-    if args.command == "run":
+    if args.command == "daily":
+        return _daily(agent, args.output, args.open)
+    elif args.command == "review":
+        from .review import review
+
+        try:
+            review(agent)
+            applications = args.output / "applications"
+            if args.pause and applications.exists():
+                _open(applications)
+        except Exception:
+            traceback.print_exc()
+            print("\nSomething went wrong. Copy the error above and paste it to Claude for help.")
+        finally:
+            if args.pause:
+                input("\nPress Enter to close this window.")
+    elif args.command == "run":
         agent.run()
     elif args.command == "chat":
         from .agent import chat
