@@ -1,0 +1,6 @@
+# Personal data — keep your real profile, preferences and generated documents out of git
+preferences.yaml
+knowledge_base/*
+!knowledge_base/README.md
+!knowledge_base/example_profile.md
+output/

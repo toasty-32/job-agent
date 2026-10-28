@@ -1,0 +1,46 @@
+# Copy to preferences.yaml and edit. preferences.yaml is git-ignored.
+
+search:
+  # Every keyword is searched in every location.
+  keywords:
+    - "computational biologist"
+    - "bioinformatics scientist"
+  locations:
+    - "Boston, Massachusetts, United States"
+    - "United States"          # combine with workplace: [remote] for remote roles
+  posted_within_days: 7        # 1, 7, 30 ... (LinkedIn "date posted" filter)
+  workplace: [remote, hybrid, onsite]
+  # internship, entry, associate, mid_senior, director, executive
+  experience_levels: [mid_senior, director]
+  # full_time, part_time, contract, temporary, internship, volunteer, other
+  job_types: [full_time]
+  max_results_per_query: 25
+  request_delay_seconds: 2.5   # be polite: pause between LinkedIn requests
+
+filters:
+  exclude_companies: []
+  exclude_title_keywords: ["intern", "sales"]
+  # A job must mention at least one of these (in title or description) if the list is non-empty.
+  required_keywords: []
+
+ranking:
+  min_score: 65                # jobs scoring below this are skipped for documents
+  # Free text — tell the agent what matters to you. It is used for scoring and for writing.
+  priorities: |
+    I want hands-on scientific computing roles in oncology or immunology.
+    Prefer small-to-mid size biotech; open to big pharma for senior roles.
+    Salary floor: $150k. No relocation outside the US East Coast.
+
+documents:
+  top_n: 5                     # `run` generates documents for the N best-scoring new jobs
+  language: English
+  cv_guidance: |
+    Two pages max. Reverse-chronological. Lead with a 3-line professional summary.
+    Quantify impact wherever the knowledge base has numbers.
+  cover_letter_guidance: |
+    Under 350 words. Warm but direct. Open with why this company specifically.
+
+claude:
+  model: claude-opus-5-5
+  scoring_effort: low          # low | medium | high | xhigh | max
+  writing_effort: high
